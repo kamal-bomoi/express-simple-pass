@@ -21,5 +21,7 @@ export function safe_redirect(raw: unknown, fallback: string): string {
 
   if (raw.startsWith("//")) return fallback;
 
+  if (raw.length > 1 && raw[1] === "\\") return fallback;
+
   return raw;
 }

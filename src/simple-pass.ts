@@ -114,10 +114,7 @@ export class SimplePass<T extends PassType> {
     return router;
   }
 
-  #authenticate_view = async (
-    req: express.Request,
-    res: express.Response
-  ): Promise<void> => {
+  #authenticate_view = (req: express.Request, res: express.Response): void => {
     const flash = read_cookie(req, FLASH_COOKIE_NAME);
 
     if (flash)
@@ -128,8 +125,9 @@ export class SimplePass<T extends PassType> {
       });
 
     this.#render(res, {
-      redirect: req.query.redirect,
-      unpassed: flash === "unpassed"
+      unpassed: flash === "unpassed",
+      redirect:
+        typeof req.query.redirect === "string" ? req.query.redirect : undefined
     });
   };
 

@@ -77,10 +77,6 @@ export function assert_password_strength(secret: Password): void {
   }
 }
 
-/**
- * Convert a single string password to a rotation map.
- * This keeps the rest of the code consistent.
- */
 function normalize_password(
   secret: string | Record<number, string>
 ): PasswordsMap {
@@ -89,17 +85,16 @@ function normalize_password(
   return Object.fromEntries(Object.entries(secret).map(([k, v]) => [k, v]));
 }
 
-/**
- * Pick the most recent password (highest numeric key) for sealing new cookies.
- * This enables password rotation:
- * - unseal uses all passwords
- * - seal uses only newest password
- */
 function newest_password(map: PasswordsMap): {
   id: string;
   secret: string;
 } {
-  const id = Math.max(...Object.keys(map).map(Number));
+  const keys = Object.keys(map);
+
+  if (!keys.length)
+    throw new Error("express-simple-pass: No passwords provided.");
+
+  const id = Math.max(...keys.map(Number));
 
   return { id: String(id), secret: map[id]! };
 }
@@ -108,8 +103,10 @@ function is_token_payload(data: unknown): data is TokenPayload {
   return (
     typeof data === "object" &&
     data !== null &&
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     (data as TokenPayload).v === TOKEN_VERSION &&
-    (data as TokenPayload).passed === true &&
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    (data as TokenPayload).passed &&
     typeof (data as TokenPayload).iat === "number"
   );
 }

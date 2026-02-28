@@ -10,5 +10,6 @@ export const DIST_DIR: string = path.dirname(fileURLToPath(import.meta.url));
 
 export const VIEWS_DIR: string = path.join(DIST_DIR, "..", "views");
 
+// eslint-disable-next-line @typescript-eslint/no-inferrable-types
 export const EXPECTED_ERROR_PATTERN: RegExp =
   /^(Expired seal|Bad hmac value|Cannot find password|Incorrect number of sealed components|Wrong mac prefix|Invalid expiration|Failed parsing sealed object JSON)/;
