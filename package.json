@@ -7,6 +7,28 @@
   "publishConfig": {
     "access": "public"
   },
+  "description": "Simple password gate middleware for Express. Protect admin UIs and internal tools without building a full authentication system.",
+  "keywords": [
+    "express",
+    "middleware",
+    "authentication",
+    "auth",
+    "cookie",
+    "password",
+    "passkey",
+    "admin",
+    "protect",
+    "gate",
+    "admin",
+    "admin-panel",
+    "internal-tools",
+    "login",
+    "logout"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/kamal-bomoi/express-simple-pass.git"
+  },
   "exports": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "files": [
