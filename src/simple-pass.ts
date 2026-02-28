@@ -1,206 +1,247 @@
-import express from "express";
-import cookieparser from "cookie-parser";
-import { view } from "./utils.js";
-import path from "node:path";
-import fs from "node:fs";
+import type { PassType, SimplePassLabels, SimplePassTheming } from "./types.js";
 import type {
-  PassKeyAuthenticationFunction,
-  PassType,
+  CookieOptions,
+  EmailPasswordVerifyFn,
+  PassKeyVerifyFn,
   SimplePassOptions
 } from "./types.js";
-
-const COOKIE_NAME = `simplepass.passed`;
+import {
+  build_cookie_options,
+  clear_cookie,
+  normalize_root_path,
+  read_cookie,
+  write_cookie
+} from "./utils/cookie.js";
+import express from "express";
+import pug from "pug";
+import {
+  DEFAULT_COOKIE_NAME,
+  DEFAULT_ROOTPATH,
+  DEFAULT_TTL,
+  FLASH_COOKIE_NAME,
+  VIEWS_DIR
+} from "./utils/constants.js";
+import { inlinify, safe_redirect, view } from "./utils/common.js";
+import {
+  assert_password_strength,
+  seal_token,
+  verify_token
+} from "./utils/token.js";
 
 export class SimplePass<T extends PassType> {
-  #rootpath: string;
+  readonly #base_cookie_options: CookieOptions;
+  readonly #cookie_name: string;
+  readonly #type: T;
+  readonly #rootpath: string;
+  readonly #verify: SimplePassOptions<T>["verify"];
+  readonly #css: SimplePassTheming["css"];
+  readonly #secret: SimplePassOptions<T>["cookie"]["secret"];
+  readonly #ttl: number;
+  readonly #labels: SimplePassLabels;
+  readonly #font: SimplePassTheming["font"];
 
-  #type: T;
+  constructor(options: SimplePassOptions<T>) {
+    const {
+      secret,
+      name = DEFAULT_COOKIE_NAME,
+      ttl = DEFAULT_TTL,
+      ...cookie_options
+    } = options.cookie;
 
-  #app: express.Application;
+    assert_password_strength(secret);
 
-  #verify: SimplePassOptions<T>["verify"];
-
-  #secret: SimplePassOptions<T>["cookie"]["secret"];
-
-  #cookie: express.CookieOptions;
-
-  #css?: SimplePassOptions<T>["css"];
-
-  #title?: SimplePassOptions<T>["title"];
-
-  #labels?: SimplePassOptions<T>["labels"];
-
-  constructor({
-    rootpath = "/simplepass",
-    verify,
-    css,
-    title,
-    labels,
-    type,
-    ...options
-  }: SimplePassOptions<T>) {
-    const { secret, ...cookie } = options.cookie;
-
-    this.#app = express();
-
-    this.#type = type;
-    this.#rootpath = rootpath;
-    this.#verify = verify;
+    this.#base_cookie_options = cookie_options;
+    this.#cookie_name = name;
+    this.#type = options.type;
+    this.#verify = options.verify;
     this.#secret = secret;
-    this.#cookie = cookie;
-    this.#title = title;
-    this.#labels = labels;
+    this.#ttl = ttl;
+    this.#labels = options.theming?.labels ?? {};
+    this.#font = options.theming?.font;
+    this.#rootpath = options.rootpath
+      ? normalize_root_path(options.rootpath)
+      : DEFAULT_ROOTPATH;
 
-    if (css)
-      this.#css = path.isAbsolute(css) ? fs.readFileSync(css, "utf-8") : css;
+    if (options.theming?.css) this.#css = inlinify(options.theming.css);
   }
 
-  get unpass() {
-    return {
-      method: "get" as const,
-      path: `${this.#rootpath}/un`
-    };
+  async passed(req: express.Request): Promise<boolean> {
+    const token = read_cookie(req, this.#cookie_name);
+
+    if (!token) return false;
+
+    const payload = await verify_token({
+      token,
+      secret: this.#secret,
+      ttl: this.#ttl
+    });
+
+    return payload !== null;
   }
 
-  static passed(req: express.Request): boolean {
-    const cookies = req.signedCookies as undefined | Record<string, any>;
-
-    if (cookies === undefined)
-      throw new Error(
-        "Cookies are undefined. Ensure that the cookie-parser middleware is applied"
-      );
-
-    return cookies[COOKIE_NAME] === "true";
-  }
-
-  usepass(
+  guard = async (
     req: express.Request,
     res: express.Response,
     next: express.NextFunction
-  ) {
-    if (!SimplePass.passed(req))
-      return res.redirect(
-        `${this.#rootpath}?redirect=${encodeURIComponent(req.originalUrl)}`
+  ): Promise<void> => {
+    if (await this.passed(req)) return next();
+
+    const redirect = encodeURIComponent(req.originalUrl);
+
+    res.redirect(`${this.#rootpath}?redirect=${redirect}`);
+  };
+
+  router(): express.Router {
+    const router = express.Router();
+
+    router.get(this.#rootpath, this.#authenticate_view);
+    router.post(this.#rootpath, this.#authenticate);
+    router.post(`${this.#rootpath}/_logout`, this.#logout);
+
+    router.use(
+      (
+        error: Error,
+        _req: express.Request,
+        res: express.Response,
+        _next: express.NextFunction
+      ) => {
+        this.#render(res, {
+          error: error.message
+        });
+      }
+    );
+
+    return router;
+  }
+
+  #authenticate_view = async (
+    req: express.Request,
+    res: express.Response
+  ): Promise<void> => {
+    const flash = read_cookie(req, FLASH_COOKIE_NAME);
+
+    if (flash)
+      clear_cookie({
+        res,
+        name: FLASH_COOKIE_NAME,
+        options: { path: "/", httpOnly: true, maxAge: 0 }
+      });
+
+    this.#render(res, {
+      redirect: req.query.redirect,
+      unpassed: flash === "unpassed"
+    });
+  };
+
+  #authenticate = async (
+    req: express.Request,
+    res: express.Response
+  ): Promise<void> => {
+    const redirect = safe_redirect(req.query.redirect, "/");
+
+    if (await this.passed(req))
+      throw new Error(
+        this.#labels.already_authenticated ?? "You are already authenticated."
       );
 
-    next();
+    try {
+      if (this.#type === "passkey") await this.#verify_passkey(req);
+      else if (this.#type === "email-password")
+        await this.#verify_credentials(req);
+      else throw new Error("Invalid pass type.");
+
+      const token = await seal_token(this.#secret, this.#ttl);
+
+      write_cookie({
+        name: this.#cookie_name,
+        res,
+        value: token,
+        options: build_cookie_options(this.#base_cookie_options, this.#ttl)
+      });
+
+      res.redirect(redirect);
+    } catch (e) {
+      res.status(401);
+
+      const body = req.body as Record<string, unknown>;
+      const email = typeof body.email === "string" ? body.email : undefined;
+
+      this.#render(res, {
+        redirect,
+        error: e instanceof Error ? e.message : JSON.stringify(e),
+        email: this.#type === "email-password" ? email : undefined
+      });
+    }
+  };
+
+  #logout = async (
+    req: express.Request,
+    res: express.Response
+  ): Promise<void> => {
+    if (!(await this.passed(req)))
+      throw new Error(this.#labels.unauthorized ?? "Not authorized.");
+
+    clear_cookie({
+      res,
+      name: this.#cookie_name,
+      options: build_cookie_options(this.#base_cookie_options, 0)
+    });
+
+    write_cookie({
+      res,
+      name: FLASH_COOKIE_NAME,
+      value: "unpassed",
+      options: { path: "/", httpOnly: true, maxAge: 10 }
+    });
+
+    res.redirect(this.#rootpath);
+  };
+
+  async #verify_passkey(req: express.Request): Promise<void> {
+    const { passkey } = req.body as { passkey?: string };
+
+    if (typeof passkey !== "string" || passkey.trim() === "")
+      throw new Error("Passkey is required.");
+
+    const fn = this.#verify as PassKeyVerifyFn;
+
+    const verified = await fn(passkey, { req });
+
+    if (!verified) throw new Error("Incorrect passkey.");
   }
 
-  router() {
-    this.#initialize();
-    this.#routes();
+  async #verify_credentials(req: express.Request): Promise<void> {
+    const { email, password } = req.body as {
+      email?: string;
+      password?: string;
+    };
 
-    return this.#app;
+    if (
+      typeof email !== "string" ||
+      typeof password !== "string" ||
+      email.trim() === "" ||
+      password === ""
+    )
+      throw new Error("Email and password are required.");
+
+    const fn = this.#verify as EmailPasswordVerifyFn;
+
+    const verified = await fn(email, password, { req });
+
+    if (!verified) throw new Error("Invalid credentials.");
   }
 
-  #routes() {
-    this.#route({
-      method: this.unpass.method,
-      path: this.unpass.path,
-      handler: ({ req, res }) => {
-        if (!SimplePass.passed(req)) throw new Error("Not authorized");
-
-        res.clearCookie(COOKIE_NAME);
-
-        res.redirect(`${this.#rootpath}?un=true`);
-      }
+  #render(res: express.Response, locals: Record<string, any>): void {
+    const html = pug.renderFile(view("pass"), {
+      rootpath: this.#rootpath,
+      type: this.#type,
+      css: this.#css,
+      labels: this.#labels,
+      font: this.#font,
+      ...locals,
+      basedir: VIEWS_DIR
     });
 
-    this.#route({
-      method: "get",
-      path: this.#rootpath,
-      handler: ({ req, res }) => {
-        res.render(view("pass"), {
-          redirect: req.query.redirect,
-          un: req.query.un === "true"
-        });
-      }
-    });
-
-    this.#route({
-      method: "post",
-      path: this.#rootpath,
-      handler: async ({ req, res }) => {
-        const redirect = req.query.redirect as string | undefined;
-
-        if (SimplePass.passed(req)) throw new Error("Already authenticated");
-
-        if (this.#type === "passkey") {
-          const passkey = (req.body as Record<string, unknown>).passkey;
-
-          if (typeof passkey !== "string")
-            throw new Error("Passkey is required");
-
-          const verify = this.#verify as PassKeyAuthenticationFunction;
-
-          if (!(await verify(passkey)))
-            return res.render(view("pass"), {
-              error: "Incorrect passkey",
-              passkey,
-              redirect: req.query.redirect
-            });
-        } else {
-          const { email, password } = req.body as Record<string, undefined>;
-
-          if (typeof email !== "string" || typeof password !== "string")
-            throw new Error("Email and password are required");
-
-          if (!(await this.#verify(email, password)))
-            return res.render(view("pass"), {
-              error: "Invalid credentials",
-              email,
-              password,
-              redirect: req.query.redirect
-            });
-        }
-
-        res
-          .cookie(COOKIE_NAME, "true", {
-            maxAge: 12 * 60 * 60 * 1000,
-            ...this.#cookie,
-            httpOnly: true,
-            signed: true
-          })
-          // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-          .redirect(redirect || "/");
-      }
-    });
-  }
-
-  #initialize() {
-    this.#app.set("view engine", "pug");
-    this.#app.use(express.urlencoded({ extended: true }));
-    this.#app.use(cookieparser(this.#secret));
-
-    this.#app.use((_req, res, next) => {
-      res.locals.rootpath = this.#rootpath;
-      res.locals.type = this.#type;
-      res.locals.css = this.#css;
-      res.locals.title = this.#title;
-      res.locals.labels = this.#labels ?? {};
-
-      next();
-    });
-  }
-
-  #route({
-    path,
-    handler,
-    method
-  }: {
-    method: "get" | "post";
-    path: string;
-    handler: (t: { req: express.Request; res: express.Response }) => any;
-  }) {
-    this.#app[method](path, async (req, res) => {
-      try {
-        await handler({ req, res });
-      } catch (e) {
-        res.render(view("pass"), {
-          error: (e as Error).message,
-          redirect: req.query.redirect
-        });
-      }
-    });
+    res.type("html").send(html);
   }
 }

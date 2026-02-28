@@ -1,13 +1,14 @@
 import { defineConfig } from "tsdown";
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  entry: ["dev/dev.ts"],
   format: "esm",
-  outDir: "dist",
-  dts: true,
-  minify: true,
+  watch: ["dev", "src"],
+  outDir: "build",
+  onSuccess: "tsc && node build/dev.mjs",
   clean: true,
   platform: "node",
+  dts: false,
   deps: {
     skipNodeModulesBundle: true
   }

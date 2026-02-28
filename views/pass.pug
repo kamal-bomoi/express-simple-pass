@@ -1,32 +1,40 @@
 extends base
 
+mixin Alert(type)
+  div.alert(class=type)
+    block
+
 block children
-  - const path = redirect || "";
+  - const path = redirect && redirect.startsWith("/") && !redirect.startsWith("//") ? redirect : "";
   - const q = path ? `?redirect=${encodeURIComponent(path)}` : "";
 
   div.container
-    div
+    div.header
       h3.title= labels.title || "Authentication"
-      p.instruction(style="font-size: 0.875rem; line-height: 1.25rem")
-        = type === "passkey" ? labels.instruction || "Enter the pass key to continue" : labels.instruction || "Enter your credentials to continue"
+      p.instruction= type === "passkey" ? labels.instruction || "Enter the pass key to continue" : labels.instruction || "Enter your credentials to continue"
+
+    if error
+      +Alert("error")= error
+
+    if unpassed === true
+      +Alert("success")= labels.logged_out || "You have been logged out."
 
     form(method="post", action=`${rootpath}${q}`)
-      div
+      div.fields
         if type === "email-password"
-          div(style="display: grid; gap: 10px")
+          div.fields-group
             input#email.input(
               type="email",
               name="email",
-              placeholder=labels.email_placehoder === undefined ? "Email" : labels.email,
-              value=email,
+              placeholder=labels.email_placeholder === undefined ? "Email" : labels.email_placeholder,
+              value=email || "",
               required,
               autofocus
             )
             input#password.input(
               type="password",
               name="password",
-              placeholder=labels.passkey_placeholder === undefined ? "Password" : labels.passkey_placeholder,
-              value=password,
+              placeholder=labels.password_placeholder === undefined ? "Password" : labels.password_placeholder,
               required
             )
         else
@@ -34,15 +42,12 @@ block children
             type="password",
             name="passkey",
             placeholder=labels.passkey_placeholder === undefined ? "Pass key" : labels.passkey_placeholder,
-            value=passkey,
             required,
             autofocus
           )
-        if error
-          p.message.error= error
-        if un
-          p.message.success= labels.unpassed || "Unpassed"
 
-      div(style="display: grid; gap: 10px")
-        button(type="submit") Submit
-        a.unpass(href=`${rootpath}/un${q}`, style="justify-self: end")= labels.unpass || "Unpass"
+      div.actions
+        button(type="submit")= labels.submit || "Submit"
+
+    form.logout-form(method="post", action=`${rootpath}/_logout${q}`)
+      button.logout(type="submit")= labels.logout || "Log out"

@@ -6,20 +6,24 @@ html(lang="en")
       meta(name="viewport", content="width=device-width, initial-scale=1.0")
       link(rel="preconnect", href="https://fonts.googleapis.com")
       link(rel="preconnect", href="https://fonts.gstatic.com", crossorigin)
-      link(
-        rel="stylesheet",
-        href="https://fonts.googleapis.com/css2?family=Finlandica&display=swap"
-      )
 
       style
         include css/styles.css
+
+      if font
+        link(rel="preconnect", href=font.url)
+        link(rel="stylesheet", href=font.url)
+        style.
+          :root {
+            --sp-font: !{font.family};
+          }
 
       if css
         style
           | !{ css }
 
-      if title
-        title= title
+      if labels.title
+        title= labels.title
       else
         title Simple Pass
 

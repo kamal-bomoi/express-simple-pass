@@ -19,7 +19,8 @@
     "module": "NodeNext",
     "outDir": "dist",
     "declaration": true,
-    "removeComments": true
+    "removeComments": true,
+    "isolatedDeclarations": true
   },
   "include": ["src"],
   "exclude": ["node_modules", "dist", "build"]

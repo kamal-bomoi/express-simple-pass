@@ -1,42 +1,44 @@
 {
   "name": "express-simple-pass",
   "version": "2.2.1",
-  "author": "Kamal Yusuf",
+  "author": "Kamal Bomoi",
   "license": "MIT",
   "type": "module",
   "publishConfig": {
     "access": "public"
   },
-  "exports": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "exports": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
   "files": [
     "dist",
     "views"
   ],
   "scripts": {
     "lint": "eslint src --fix",
-    "build": "tsc --noEmit && tsup-node --config build.config.ts",
+    "build": "tsc --noEmit && tsdown --config build.config.ts",
     "prepublishOnly": "yarn run build",
-    "dev": "tsup"
+    "dev": "tsdown --config dev.config.ts",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",
-    "@prettier/plugin-pug": "^3.2.0",
-    "@types/cookie-parser": "^1.4.8",
-    "@types/express": "^5.0.0",
-    "@types/node": "^22.10.10",
+    "@prettier/plugin-pug": "^3.4.2",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.3.2",
+    "@types/pug": "^2.0.10",
     "eslint": "^9.13.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.2.1",
-    "express": "^4.21.2",
-    "prettier": "^3.3.3",
-    "tsup": "^8.3.0",
-    "typescript": "^5.6.3",
-    "typescript-eslint": "^8.11.0"
+    "express": "^5.2.1",
+    "prettier": "^3.8.1",
+    "tsdown": "^0.21.0-beta.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1"
   },
-  "packageManager": "yarn@4.6.0",
+  "packageManager": "yarn@4.12.0",
   "dependencies": {
-    "cookie-parser": "^1.4.7",
+    "cookie": "^1.1.1",
+    "iron-webcrypto": "^2.0.0",
     "pug": "^3.0.3"
   }
 }

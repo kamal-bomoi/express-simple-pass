@@ -1,30 +1,46 @@
+import { SimplePass } from "../src/index.js";
 import express from "express";
-import { SimplePass } from "../dist/index.js";
 
 const app = express();
 
-const simplepass = new SimplePass({
+const v2 = new SimplePass({
   type: "passkey",
-  rootpath: "/pass",
   verify(passkey) {
     return passkey === "kamal";
   },
   cookie: {
-    secret: "superduperlongsecuresecret"
+    secret: "5HViWb0MLQmp392vMfuFdw0vXInmrwOo",
+    secure: false,
+    name: "__simplepass__"
+  },
+  theming: {
+    labels: {},
+    font: {
+      url: "https://fonts.googleapis.com/css2?family=Finlandica&display=swap",
+      family: `"Finlandica", sans-serif`
+    }
   }
 });
 
-app.use(simplepass.router());
+app.use(express.urlencoded({ extended: true }));
+app.use(v2.router());
 
 app.get("/", (_req, res) => {
   res.send("/");
 });
 
-app.get(
-  "/passed",
-  (req, res, next) => simplepass.usepass(req, res, next),
-  (_req, res) => {
-    res.send("passed");
+app.get("/passed", v2.guard, (_req, res) => {
+  res.send("passed");
+});
+
+app.use(
+  (
+    error: Error,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction
+  ) => {
+    res.status(500).json({ error: error.message });
   }
 );
 
