@@ -8,7 +8,7 @@ Version 3 is a complete rewrite with a revamped authentication system, a redesig
 
 Previous versions used `cookie-parser` with `req.signedCookies` to verify the authentication state. This approach had several weaknesses: it depended entirely on the host app having `cookie-parser` registered with the correct secret, it was vulnerable to conflicts with any other middleware that touched `req.signedCookies`, and the cookie value itself was only HMAC-signed.
 
-Version 3 replaces this entirely. The authentication token is now encrypted and authenticated using [iron-webcrypto](https://github.com/nicolo-ribaudo/iron-webcrypto). The token payload is fully opaque to the browser. Tampered, forged, or expired tokens are rejected during unsealing before any payload data is read.
+Version 3 replaces this entirely. The authentication token is now encrypted and authenticated using [iron-webcrypto](https://github.com/brc-dd/iron-webcrypto). The token payload is fully opaque to the browser. Tampered, forged, or expired tokens are rejected during unsealing before any payload data is read.
 
 Cookies are read directly from `req.headers.cookie` and written via `res.setHeader("Set-Cookie", ...)` with no dependency on `cookie-parser` or any other middleware. This eliminates the entire class of conflicts and misconfiguration issues that affected previous versions, and ensures the auth cookie is isolated from the host app's cookie handling regardless of how it is configured.
 
